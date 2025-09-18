@@ -8,6 +8,14 @@ requires-python = ">=3.13"
 dependencies = ["typer (>=0.17.4,<0.18.0)"]
 
 
+[tool.poetry.dependencies]
+pyinstaller = [{ version = "^6.16.0", python = ">=3.13,<3.15" }]
+
+
+[tool.poetry-pyinstaller-plugin.scripts]
+dryass = { source = "./main.py", type = "onefile", bundle = false }
+
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
