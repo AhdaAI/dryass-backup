@@ -1,1 +1,1 @@
-from .functions import backup_file
+from .functions import backup_file, backup_folder

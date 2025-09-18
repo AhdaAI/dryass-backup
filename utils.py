@@ -1,6 +1,8 @@
 import os
 import hashlib
 import json
+import typer
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 
 
 def get_file_hash(path):
@@ -15,14 +17,33 @@ def get_file_hash(path):
 def get_folder_hash(path):
     """Return combined hash of all files in a folder."""
     hasher = hashlib.sha256()
-    for root, _, files in os.walk(path):
-        for fname in sorted(files):
-            fpath = os.path.join(root, fname)
-            hasher.update(get_file_hash(fpath).encode())
+    # First count total files for progress bar
+    total_files = sum(len(files) for _, _, files in os.walk(path))
+
+    # with typer.progressbar(range(total_files), length=total_files) as progress:
+    #     for root, _, files in os.walk(path):
+    #         for fname in sorted(files):
+    #             fpath = os.path.join(root, fname)
+    #             hasher.update(get_file_hash(fpath).encode())
+    #             progress.update(1)
+
+    with Progress(
+        BarColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True
+    ) as progress:
+        task = progress.add_task("Hashing files...", total=total_files)
+        for root, _, files in os.walk(path):
+            progress.update(
+                task, description=f"[blue]Hashing [yellow]{root}...")
+            for fname in sorted(files):
+                fpath = os.path.join(root, fname)
+                hasher.update(get_file_hash(fpath).encode())
+                progress.update(task, advance=1)
     return hasher.hexdigest()
 
 
-def load_metadata(meta_file):
+def load_metadata(meta_file) -> dict:
     if os.path.exists(meta_file):
         with open(meta_file, "r") as f:
             return json.load(f)
