@@ -3,9 +3,10 @@ from utils import load_metadata, save_metadata, get_size, get_file_hash, get_fol
 import os
 import json
 import shutil
+import time
 from pathlib import Path
 from rich import print
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TransferSpeedColumn, TimeRemainingColumn
 from datetime import datetime
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -76,6 +77,7 @@ def backup_file(
 
 
 def backup_folder(folder_path: Path, destination: Path, meta_filename: str = ""):
+    start_time = time.time()
     destination = destination.joinpath(folder_path.name)
 
     if not meta_filename:
@@ -97,7 +99,7 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
         destination.mkdir(exist_ok=True)
 
     # Hashing folders...
-    print(f'\n\n[blue]{" Hashing and Backup ":=^40}')
+    print(f'\n\n[bold blue]{f" {folder_path.name} ":=^50}[/bold blue]\n')
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -108,7 +110,7 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
         )
         for item in folder_path.iterdir():
             if not any(item.iterdir()):
-                print(f"[yellow][bold]{item}[/bold] is empty.[/yellow]")
+                print(f"• [yellow][bold]{item}[/bold] is empty.[/yellow]")
                 progress.update(task, advance=1)
                 continue
 
@@ -118,7 +120,7 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
 
             if metadata.get(item.name) == current_hash:
                 print(
-                    f"[green][bold]{item.name}[/bold] is Up To Date.[/green]")
+                    f"• [green][bold]{item.name}[/bold] is Up To Date.[/green]")
                 continue
 
             # Compressing files
@@ -128,38 +130,59 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
             # Save metadata
             metadata[item.name] = current_hash
             save_metadata(f"{destination}\\{meta_filename}", metadata)
-            print(f"[green]Hashed {item}.")
+
+    elapsed = time.time() - start_time
+    print(
+        f"\n[bold cyan]{f" Time Elapsed : {elapsed:.2f} second ":=^50}[/bold cyan]\n\n")
     return
 
 
 def zip_compression(destination: Path, folder: Path):
+    start_time = time.time()
+    print(f"• Backing Up {folder.name}...")
+    # Collect all files first (to know size & counts)
+    all_files = []
+    total_size = 0
+    for root, dirs, files in os.walk(folder):
+        for fname in files:
+            fpath = os.path.join(root, fname)
+            all_files.append(fpath)
+            total_size += os.path.getsize(fpath)
+
     with Progress(
+        TimeRemainingColumn(),
+        "•",
+        TransferSpeedColumn(),
+        "•",
         BarColumn(),
+        "[progress.percentage]{task.percentage:>3.1f}%",
         TextColumn("[progress.description]{task.description}"),
-        transient=True
-    ) as prog:
-        total_files = sum(1 for _ in folder.iterdir())
-        total_fname = sum(
-            1 for files in folder.iterdir() if files.is_dir()
-            for _ in os.listdir(files) if os.path.isfile(os.path.join(files, _))
+        transient=True,
+    ) as progress:
+        # Task for files count
+        task_files = progress.add_task(
+            f"[cyan]Zipping {len(all_files)} files", total=len(all_files)
         )
-        task = prog.add_task(
-            f"Preparing to zip {total_files} files.", total=total_files
+
+        # Task for file size
+        task_size = progress.add_task(
+            f"[green]Writing {total_size/1024/1024:.2f} MB", total=total_size
         )
-        file_task = prog.add_task(
-            f"Preparing to zip {total_fname} fname.",
-            total=total_fname
-        )
+
         with ZipFile(destination, "w", compression=ZIP_DEFLATED, compresslevel=1) as zipf:
-            for root, _, files in os.walk(folder):
-                prog.update(
-                    task, advance=1, description=f"[blue]Zipping[/blue] [yellow]{root}...[/yellow]")
-                for fname in files:
-                    fpath = os.path.join(root, fname)
-                    arcname = os.path.relpath(fpath, folder)
-                    zipf.write(fpath, arcname)
-                    prog.update(
-                        file_task,
-                        advance=1,
-                        description=f"[blue]Zipping[/blue] [yellow]{fname}...[/yellow]"
-                    )
+            for fpath in all_files:
+                arcname = os.path.relpath(fpath, folder)
+
+                # Add to zip
+                zipf.write(fpath, arcname)
+
+                # Update progress
+                progress.update(task_files, advance=1,
+                                description=f"[cyan]File: {arcname}")
+                progress.update(task_size, advance=os.path.getsize(fpath))
+
+    # Elapsed time
+    elapsed = time.time() - start_time
+    print(f"[bold green]Backup complete![/bold green] → {destination}")
+    print(
+        f"[bold green]Time Elapsed[/bold green] {elapsed:.2f} [green]seconds[/green]")

@@ -8,6 +8,7 @@ This program main purpose is to be used as a steam and epic games backup.
 
 from BACKUP import backup_file, backup_folder
 
+import time
 from pathlib import Path
 from rich import print
 
@@ -30,12 +31,10 @@ def backup(path: Path, destination: Path, meta_file: Path = Path.home().joinpath
         return
 
     if path.is_file():
-        print("[yellow][+] File Detected.[/yellow]")
         backup_file(path, destination, meta_file)
         return
 
     if path.is_dir():
-        print('[yellow][+] Folder Detected.[/yellow]')
         backup_folder(path, destination)
         return
     return
@@ -49,4 +48,3 @@ def restore(backup_path: Path, destination: Path):
 
 if __name__ == "__main__":
     app()  # Typer
-    print("Hello")
