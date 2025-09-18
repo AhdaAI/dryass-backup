@@ -1,0 +1,13 @@
+[project]
+name = "backup-cli-program"
+version = "0.1.0"
+description = "Files and Folders backup program."
+authors = [{ name = "Ahda Akmalul Ilmi", email = "ahda043@gmail.com" }]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = ["typer (>=0.17.4,<0.18.0)"]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
