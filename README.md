@@ -1,3 +1,10 @@
-# Backup Your File
+# DRYASS BACKUP
 
-This is a program to backup your steam or epic games files, it can also backup your files.
+> - Backup : ✔️ Implemented
+> - Restore : ✖️ Not Yet Implement
+
+## Background
+
+This program came because of my laziness to find a free, simple, and great backup program (Mainly for steam).
+
+P.S The name not come from me, I ask my friend and he instinctively gave me that name.
