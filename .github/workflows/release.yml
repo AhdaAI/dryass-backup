@@ -1,0 +1,66 @@
+name: Build and Release
+
+on:
+  push:
+    paths:
+      - 'pyproject.toml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+        
+    - name: Install Poetry
+      run: |
+        python -m pip install --upgrade pip
+        pip install poetry
+      
+    - name: Install dependencies
+      run: poetry install
+      
+    - name: Build with PyInstaller
+      run: |
+        poetry run pip install pyinstaller
+        poetry run pyinstaller --onefile --name dryass main.py
+        
+    - name: Create ZIP archive
+      run: |
+        Compress-Archive -Path dist/dryass.exe -DestinationPath dist/dryass-windows.zip
+      shell: pwsh
+        
+    - name: Get version from pyproject.toml
+      id: get_version
+      run: |
+        $version = (Get-Content pyproject.toml | Select-String 'version = "([^"]+)"').Matches.Groups[1].Value
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+
+    - name: Create Tag
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git tag "v${{ steps.get_version.outputs.version }}"
+        git push origin "v${{ steps.get_version.outputs.version }}"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: "v${{ steps.get_version.outputs.version }}"
+        files: |
+          dist/dryass.exe
+          dist/dryass-windows.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
