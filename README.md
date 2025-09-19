@@ -3,11 +3,15 @@
 > - Backup : ✔️ Implemented
 > - Restore : ✖️ Not Yet Implement
 
-## Background
+## BACKGROUND
 
 This program came because of my laziness to find a free, simple, and great backup program (Mainly for steam).
 
 P.S The name not come from me, I ask my friend and he instinctively gave me that name.
+
+## HOW TO USE
+
+Open terminal -> run `./dryass.exe` -> Follow the given command.
 
 ## License
 
