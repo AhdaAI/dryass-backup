@@ -1,45 +1,55 @@
 import os
-import hashlib
 import json
-import typer
+from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from blake3 import blake3
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 
+CHUNK_SIZE = 16 * 1024 * 1024  # 16 MB
 
-def get_file_hash(path):
-    """Return SHA256 hash of a file."""
-    hasher = hashlib.sha256()
+
+def get_file_hash(path: Path) -> str:
+    """Return BLAKE3 hash of a single file."""
+    hasher = blake3()
     with open(path, "rb") as f:
-        while chunk := f.read(8192):
+        while chunk := f.read(CHUNK_SIZE):
             hasher.update(chunk)
     return hasher.hexdigest()
 
 
-def get_folder_hash(path):
-    """Return combined hash of all files in a folder."""
-    hasher = hashlib.sha256()
-    # First count total files for progress bar
-    total_files = sum(len(files) for _, _, files in os.walk(path))
+def get_folder_hash(path: Path, workers: int = max(1, os.cpu_count() or 1)) -> str:
+    """Return combined BLAKE3 hash of all files in a folder."""
+    hasher = blake3()
 
-    # with typer.progressbar(range(total_files), length=total_files) as progress:
-    #     for root, _, files in os.walk(path):
-    #         for fname in sorted(files):
-    #             fpath = os.path.join(root, fname)
-    #             hasher.update(get_file_hash(fpath).encode())
-    #             progress.update(1)
+    # Collect all files
+    files = []
+    for root, _, filenames in os.walk(path):
+        for fname in filenames:
+            files.append(os.path.join(root, fname))
+    files.sort()  # ensure consistent ordering
+    total_files = len(files)
 
     with Progress(
         BarColumn(),
         TextColumn("[progress.description]{task.description}"),
         transient=True
-    ) as progress:
+    ) as progress, ProcessPoolExecutor(max_workers=workers) as executor:
+
         task = progress.add_task("Hashing files...", total=total_files)
-        for root, _, files in os.walk(path):
+
+        # Dispatch hashing jobs
+        futures = {executor.submit(get_file_hash, f): f for f in files}
+
+        for future in as_completed(futures):
+            fpath = futures[future]
+            try:
+                file_hash = future.result()
+                hasher.update(file_hash.encode())
+            except Exception as e:
+                print(f"[!] Failed to hash {fpath}: {e}")
             progress.update(
-                task, description=f"[blue]Hashing [yellow]{root}...")
-            for fname in sorted(files):
-                fpath = os.path.join(root, fname)
-                hasher.update(get_file_hash(fpath).encode())
-                progress.update(task, advance=1)
+                task, advance=1, description=f"[blue]Hashing [yellow]{fpath[:80]}...")
+
     return hasher.hexdigest()
 
 
