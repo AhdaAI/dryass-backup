@@ -80,9 +80,6 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
     metadata_path = destination.joinpath(f"metadata\\{meta_filename}")
 
     metadata = load_metadata(metadata_path)
-    if not metadata:
-        destination.joinpath("metadata").mkdir(exist_ok=True)
-        print('[yellow]Metadata not found.[/yellow]')
 
     # Steam folder change...
     if folder_path.name == "SteamLibrary":
@@ -93,6 +90,10 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
     # Checking and creating folder
     if not destination.exists():
         destination.mkdir(exist_ok=True)
+
+    if not metadata:
+        destination.joinpath("metadata").mkdir(exist_ok=True)
+        print('[yellow]Metadata not found.[/yellow]')
 
     # Hashing folders...
     print(f'\n\n[bold blue]{f" {folder_path} ":=^50}[/bold blue]\n')
