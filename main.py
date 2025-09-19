@@ -9,6 +9,7 @@ This program main purpose is to be used as a steam and epic games backup.
 from BACKUP import backup_file, backup_folder
 from utils import zst_per_file_decompression
 
+import multiprocessing
 import time
 from pathlib import Path
 from rich import print
@@ -48,4 +49,5 @@ def restore(source: Path, destination: Path):
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     app()  # Typer
