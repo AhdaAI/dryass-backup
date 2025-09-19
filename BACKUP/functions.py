@@ -1,9 +1,11 @@
-from utils import load_metadata, save_metadata, get_size, get_file_hash, get_folder_hash
+from utils import load_metadata, save_metadata, get_size, get_file_hash, get_folder_hash, compress_file, compress_files_parallel
 
 import os
 import json
 import shutil
 import time
+import tarfile
+import zstandard as zstd
 from pathlib import Path
 from rich import print
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TransferSpeedColumn, TimeRemainingColumn
@@ -54,18 +56,10 @@ def backup_file(
         ) as progress:
             task = progress.add_task("Compressing...", total=None)
             with ZipFile(dest_zip, "w", compression=ZIP_DEFLATED, compresslevel=9) as zipf:
-                if os.path.isfile(file_path):
-                    progress.update(
-                        task, description=f"Compressing {name}...")
-                    zipf.write(file_path, os.path.basename(file_path))
-                else:
-                    for root, _, files in os.walk(file_path):
-                        for fname in files:
-                            progress.update(
-                                task, description=f"Compressing {fname}...")
-                            fpath = os.path.join(root, fname)
-                            arcname = os.path.relpath(fpath, file_path)
-                            zipf.write(fpath, arcname)
+                progress.update(
+                    task, description=f"Compressing {name}..."
+                )
+                zipf.write(file_path, os.path.basename(file_path))
 
         print(
             f"Compressed [yellow]{file_path}[/yellow] → [green]{dest_zip}[/green]"
@@ -77,15 +71,17 @@ def backup_file(
 
 
 def backup_folder(folder_path: Path, destination: Path, meta_filename: str = ""):
-    start_time = time.time()
-    destination = destination.joinpath(folder_path.name)
-
     if not meta_filename:
         meta_filename = f"{folder_path.name}_meta.json"
         print(f"[green]Meta Filename : {meta_filename}[/green]")
 
-    metadata = load_metadata(f"{destination}\\{meta_filename}")
+    start_time = time.time()
+    destination = destination.joinpath(folder_path.name)
+    metadata_path = destination.joinpath(f"metadata\\{meta_filename}")
+
+    metadata = load_metadata(metadata_path)
     if not metadata:
+        destination.joinpath("metadata").mkdir(exist_ok=True)
         print('[yellow]Metadata not found.[/yellow]')
 
     # Steam folder change...
@@ -99,90 +95,69 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
         destination.mkdir(exist_ok=True)
 
     # Hashing folders...
-    print(f'\n\n[bold blue]{f" {folder_path.name} ":=^50}[/bold blue]\n')
+    print(f'\n\n[bold blue]{f" {folder_path} ":=^50}[/bold blue]\n')
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         transient=True
     ) as progress:
         task = progress.add_task(
-            "Hashing...", total=None
+            "Checking...", total=None
         )
-        for item in folder_path.iterdir():
+        for item in folder_path.iterdir():  # Iterating through items in folder
+            iter_start = time.time()
+            progress.update(
+                task, description=f"Checking {item.name}...")
+
             if not any(item.iterdir()):
-                print(f"• [yellow][bold]{item}[/bold] is empty.[/yellow]")
+                print(
+                    f"• [yellow][bold]{item}[/bold] is empty. [{time.time() - iter_start} second][/yellow]"
+                )
                 progress.update(task, advance=1)
                 continue
 
-            progress.update(
-                task, description=f"Hashing and Backing Up {item.name}...")
             current_hash = get_folder_hash(item)
 
+            # Checking if back up is needed
             if metadata.get(item.name) == current_hash:
                 print(
-                    f"• [green][bold]{item.name}[/bold] is Up To Date.[/green]")
+                    f"• [green][bold]{item.name}[/bold] → Up To Date. [{time.time() - iter_start} second][/green]"
+                )
                 continue
 
+            progress.update(
+                task,
+                description=f"Backing up {item.name}..."
+            )
+
             # Compressing files
-            dest_zip = destination.joinpath(f"{item.name}.zip")
-            zip_compression(dest_zip, item)
+            dest_folder = destination.joinpath(f"{item.name}")
+            dest_folder.mkdir(exist_ok=True)
+            files_tuple: list = []
+
+            for root, _, files in os.walk(item):
+                root_path = Path(root)
+                relative = root_path.relative_to(item)
+                dest_relative = dest_folder.joinpath(relative)
+                dest_relative.mkdir(exist_ok=True)
+                for file in sorted(files):
+                    files_tuple.append(
+                        (root_path.joinpath(file), dest_relative)
+                    )
+
+            compress_files_parallel(files_tuple)
 
             # Save metadata
             metadata[item.name] = current_hash
-            save_metadata(f"{destination}\\{meta_filename}", metadata)
+            save_metadata(metadata_path, metadata)
+            print(
+                f"• [green][bold]{item.name}[/bold] Added to metadata. [{time.time() - iter_start:.2f} second][/green]"
+            )
 
     elapsed = time.time() - start_time
+    minute = 0
+    if elapsed > 60:
+        minute = elapsed / 60
     print(
-        f"\n[bold cyan]{f" Time Elapsed : {elapsed:.2f} second ":=^50}[/bold cyan]\n\n")
+        f"\n[bold cyan]{f" Time Elapsed : {minute:.2f} Minute {elapsed:.2f} Second ":=^50}[/bold cyan]\n\n")
     return
-
-
-def zip_compression(destination: Path, folder: Path):
-    start_time = time.time()
-    print(f"• Backing Up {folder.name}...")
-    # Collect all files first (to know size & counts)
-    all_files = []
-    total_size = 0
-    for root, dirs, files in os.walk(folder):
-        for fname in files:
-            fpath = os.path.join(root, fname)
-            all_files.append(fpath)
-            total_size += os.path.getsize(fpath)
-
-    with Progress(
-        TimeRemainingColumn(),
-        "•",
-        TransferSpeedColumn(),
-        "•",
-        BarColumn(),
-        "[progress.percentage]{task.percentage:>3.1f}%",
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-    ) as progress:
-        # Task for files count
-        task_files = progress.add_task(
-            f"[cyan]Zipping {len(all_files)} files", total=len(all_files)
-        )
-
-        # Task for file size
-        task_size = progress.add_task(
-            f"[green]Writing {total_size/1024/1024:.2f} MB", total=total_size
-        )
-
-        with ZipFile(destination, "w", compression=ZIP_DEFLATED, compresslevel=1) as zipf:
-            for fpath in all_files:
-                arcname = os.path.relpath(fpath, folder)
-
-                # Add to zip
-                zipf.write(fpath, arcname)
-
-                # Update progress
-                progress.update(task_files, advance=1,
-                                description=f"[cyan]File: {arcname}")
-                progress.update(task_size, advance=os.path.getsize(fpath))
-
-    # Elapsed time
-    elapsed = time.time() - start_time
-    print(f"[bold green]Backup complete![/bold green] → {destination}")
-    print(
-        f"[bold green]Time Elapsed[/bold green] {elapsed:.2f} [green]seconds[/green]")
