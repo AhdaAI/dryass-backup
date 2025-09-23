@@ -47,7 +47,7 @@ jobs:
       - name: Create ZIP archive
         run: |
           cd dist
-          zip backup_cli_program-0.1.1.tar.gz pyinstaller\win_amd64\dryass.exe
+          zip backup_cli_program-0.1.1.tar.gz pyinstaller/win_amd64/dryass.exe
           cd ..
 
       - name: Get version from pyproject.toml
