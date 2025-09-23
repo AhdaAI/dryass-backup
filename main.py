@@ -6,12 +6,14 @@ The program will check for file size and make decision to compress it or not, th
 This program main purpose is to be used as a steam and epic games backup.
 """
 
-from BACKUP import backup_file, backup_folder
-from utils import get_file_hash, compress_selected_files, load_metadata, save_metadata
+from utils import get_file_hash, compress_selected_files, load_metadata, save_metadata, SKIP_EXT
 
 import multiprocessing
 import time
 import os
+import shutil
+import zipfile
+from tempfile import TemporaryDirectory
 from pathlib import Path
 from rich import print
 
@@ -21,7 +23,7 @@ app = typer.Typer(no_args_is_help=True)
 
 
 @app.command(no_args_is_help=True)
-def backup(source: Path, destination: Path, meta_path: Path = Path.home()):
+def backup(source: Path, destination: Path, meta_path: Path | None = None):
     """
     Backup your file or folder.
 
@@ -33,15 +35,14 @@ def backup(source: Path, destination: Path, meta_path: Path = Path.home()):
     source = source.resolve()
     destination = destination.resolve().joinpath(f"{source.name}_backup")
     meta_fname = f"{source.name}_meta.json"
-    if meta_path:
-        meta_file = meta_path.joinpath(meta_fname)
-    else:
-        meta_file = destination.joinpath(meta_fname)
-
-    if not destination.exists():
-        destination.mkdir(exist_ok=True)
 
     if source.is_file():  # === File Compression and Zipped ===
+        if meta_path:
+            meta_file = meta_path.joinpath(meta_fname)
+        else:
+            meta_file = destination.joinpath(meta_fname)
+
+        destination.mkdir(exist_ok=True)
         metadata = load_metadata(meta_file)
         file_hash = get_file_hash(source)
         if metadata.get(source.name) == file_hash:
@@ -51,15 +52,50 @@ def backup(source: Path, destination: Path, meta_path: Path = Path.home()):
         save_metadata(meta_file, metadata)
         return print(["[green]File successfully compressed."])
 
-    struct = destination.joinpath("structure.json")
-    struct_data = {}
-    for root, _, files in os.walk(source):
-        files_path = []
-        for file in files:
-            files_path.append(file)
-        struct_data[root] = files_path
+    with TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        temp_compressed = temp_path.joinpath(f"{source.name}_compressed.zip")
+        temp_meta_path = temp_path.joinpath(f"metadata")
 
-    save_metadata(struct, struct_data)
+        structure = {}
+
+        with zipfile.ZipFile(
+            temp_compressed,
+            "w",
+            zipfile.ZIP_DEFLATED
+        ) as zipf:
+            for files in source.rglob("*"):
+                arcname = files.relative_to(source)
+
+                if files.is_file and files.suffix.lower() not in SKIP_EXT:
+                    zipf.write(files, arcname)
+                    continue
+
+                shutil.copy2(files, temp_dir)
+
+        # === Storing process
+        # == This function only store and not compress, this is useful to retain data that are not worth it to compress
+        with zipfile.ZipFile(
+            destination.with_suffix(".zip"),
+            "w",
+            zipfile.ZIP_STORED
+        ) as zipf:
+            for items in temp_path.iterdir():
+                arcname = items.relative_to(temp_path)
+                zipf.write(items, arcname)
+
+    # destination.mkdir(exist_ok=True)
+    # backup_data.mkdir(exist_ok=True)
+
+    # struct_data = {}
+    # for root, _, files in os.walk(source):
+    #     files_path = []
+    #     for file in files:
+    #         files_path.append(file)
+    #     struct_data[root] = files_path
+
+    # struct = backup_data.joinpath("structure.json")
+    # save_metadata(struct, struct_data)
 
     return
 
