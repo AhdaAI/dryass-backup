@@ -108,7 +108,7 @@ SKIP_EXT = {
     ".cab", ".iso", ".vhd", ".vhdx",
 
     # Game Data (custom compressed formats)
-    ".pak", ".p4k", ".vpk", ".cpk", ".wad", ".pk3", ".dat",
+    ".pak", ".p4k", ".vpk", ".cpk", ".wad", ".pk3", ".dat", ".scs",
 
     # Documents
     ".pdf", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"
