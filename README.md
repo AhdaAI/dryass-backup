@@ -1,6 +1,8 @@
 # DRYASS BACKUP
 
-[![Build and Release](https://github.com/AhdaAI/dryass-backup/actions/workflows/release.yml/badge.svg)](https://github.com/AhdaAI/dryass-backup/actions/workflows/release.yml)
+[![GitHub License](https://img.shields.io/github/license/AhdaAI/dryass-backup)](https://github.com/AhdaAI/dryass-backup?tab=MIT-1-ov-file)
+
+[![GitHub release](https://img.shields.io/github/release/AhdaAI/dryass-backup)](https://GitHub.com/AhdaAI/dryass-backup/releases/)
 
 > - Backup : ✔️ Implemented
 > - Restore : ✖️ Not Yet Implement
