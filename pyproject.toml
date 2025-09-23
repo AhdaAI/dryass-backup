@@ -1,6 +1,6 @@
 [project]
 name = "backup-cli-program"
-version = "0.1.2"
+version = "0.1.1"
 description = "Files and Folders backup program."
 authors = [{ name = "Ahda Akmalul Ilmi", email = "ahda043@gmail.com" }]
 readme = "README.md"
