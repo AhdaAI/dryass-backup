@@ -95,20 +95,23 @@ def get_size(path) -> int:
 
 SKIP_EXT = {
     # Audio
-    ".mp3", ".ogg", ".aac", ".opus", ".flac", ".wma", ".m4a", ".mid", ".midi",
+    ".mp3", ".aac", ".ogg", ".opus", ".flac", ".wma", ".m4a",
 
     # Video
-    ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".webm", ".flv",
+    ".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm",
 
-    # Images / Textures
-    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tga", ".dds", ".webp", ".ico",
+    # Images
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".tif", ".tiff", ".bmp",
 
     # Archives / Packages
-    ".zip", ".rar", ".7z", ".gz", ".tar", ".tgz", ".xz", ".bz2",
-    ".pak", ".vpk", ".bnk", ".pck", ".p4k", ".exe",
+    ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".lz4",
+    ".cab", ".iso", ".vhd", ".vhdx",
 
-    # Game Assets / Misc
-    ".apk", ".iso", ".cab", ".cpk", ".dat"
+    # Game Data (custom compressed formats)
+    ".pak", ".p4k", ".vpk", ".cpk", ".wad", ".pk3", ".dat",
+
+    # Documents
+    ".pdf", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"
 }
 
 
