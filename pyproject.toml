@@ -19,7 +19,7 @@ inflate64 = "^1.0.1"
 
 
 [tool.poetry-pyinstaller-plugin.scripts]
-dryass = { source = "./main.py", type = "onefile", bundle = false }
+dryass = { source = "./main.py", type = "onefile", bundle = false, console = true }
 
 
 [build-system]

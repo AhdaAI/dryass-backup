@@ -2,6 +2,7 @@ import os
 import json
 import py7zr
 import tempfile
+import time
 from multiprocessing import Manager
 from rich import print
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn
@@ -104,7 +105,7 @@ SKIP_EXT = {
 
     # Archives / Packages
     ".zip", ".rar", ".7z", ".gz", ".tar", ".tgz", ".xz", ".bz2",
-    ".pak", ".vpk", ".bnk", ".pck", ".p4k",
+    ".pak", ".vpk", ".bnk", ".pck", ".p4k", ".exe",
 
     # Game Assets / Misc
     ".apk", ".iso", ".cab", ".cpk", ".dat"

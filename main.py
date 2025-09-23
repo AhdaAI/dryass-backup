@@ -16,6 +16,7 @@ import zipfile
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from rich import print
+from rich.progress import Progress, BarColumn, TextColumn
 
 import typer
 
@@ -31,12 +32,16 @@ def backup(source: Path, destination: Path, meta_path: Path | None = None):
 
     --destination   : "C:/Program Files"
     """
-    print(f"[cyan]Preparing...")
+    start_time = time.time()
     source = source.resolve()
-    destination = destination.resolve().joinpath(f"{source.name}_backup")
+    destination = destination.resolve()
+    print(f"[cyan]• Source : [bold]{source.name}")
+    print(f"[cyan]• Destination : [bold]{destination.name}")
+    destination = destination.joinpath(f"{source.name}_backup")
     meta_fname = f"{source.name}_meta.json"
 
     if source.is_file():  # === File Compression and Zipped ===
+        print(f"[green][+] [cyan]Source is a [bold]file[/bold].")
         if meta_path:
             meta_file = meta_path.joinpath(meta_fname)
         else:
@@ -52,50 +57,96 @@ def backup(source: Path, destination: Path, meta_path: Path | None = None):
         save_metadata(meta_file, metadata)
         return print(["[green]File successfully compressed."])
 
+    print(f"[green][+] [cyan]Source is a [bold]folder[/bold].")
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         temp_compressed = temp_path.joinpath(f"{source.name}_compressed.zip")
         temp_meta_path = temp_path.joinpath(f"metadata")
+        temp_meta_path.mkdir(exist_ok=True)
 
-        structure = {}
+        metadata = {}
 
-        with zipfile.ZipFile(
-            temp_compressed,
-            "w",
-            zipfile.ZIP_DEFLATED
-        ) as zipf:
-            for files in source.rglob("*"):
-                arcname = files.relative_to(source)
+        with Progress(
+            BarColumn(),
+            "•",
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            "•",
+            TextColumn("[progress.description]{task.description}"),
+        ) as progress:
+            compress_task = progress.add_task(
+                "[yellow]Compressing files...", total=len(list(source.rglob("*"))))
 
-                if files.is_file and files.suffix.lower() not in SKIP_EXT:
-                    zipf.write(files, arcname)
-                    continue
+            with zipfile.ZipFile(
+                temp_compressed,
+                "w",
+                zipfile.ZIP_DEFLATED
+            ) as zipf:
+                file_hash = {}
+                for files in source.rglob("*"):
+                    arcname = files.relative_to(source)
 
-                shutil.copy2(files, temp_dir)
+                    if files.is_file():
+                        file_hash[arcname.__str__()] = get_file_hash(files)
+
+                        if (files.suffix.lower() not in SKIP_EXT):
+                            zipf.write(files, arcname)
+                            progress.update(
+                                compress_task,
+                                description=f"[yellow]Compressed [bold]{files.name}.",
+                                advance=1)
+                            continue
+
+                        fname = files.relative_to(source)
+                        dest_copy = temp_path.joinpath(fname)
+                        dest_copy.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(
+                            files,
+                            dest_copy
+                        )
+
+                    progress.update(
+                        compress_task,
+                        description=f"[yellow]Compressed [bold]{files.name}.",
+                        advance=1
+                    )
+
+            metadata["hashes"] = file_hash
+
+        save_metadata(
+            temp_meta_path.joinpath(f"{source.name}_metadata.json"),
+            metadata
+        )
 
         # === Storing process
-        # == This function only store and not compress, this is useful to retain data that are not worth it to compress
-        with zipfile.ZipFile(
-            destination.with_suffix(".zip"),
-            "w",
-            zipfile.ZIP_STORED
-        ) as zipf:
-            for items in temp_path.iterdir():
-                arcname = items.relative_to(temp_path)
-                zipf.write(items, arcname)
+        with Progress(
+            BarColumn(),
+            "•",
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            "•",
+            TextColumn("[progress.description]{task.description}"),
+        ) as progress:
+            store_task = progress.add_task("[yellow]Storing files...", total=sum(
+                len(files) for _, _, files in os.walk(temp_path)))
 
-    # destination.mkdir(exist_ok=True)
-    # backup_data.mkdir(exist_ok=True)
+            with zipfile.ZipFile(
+                destination.with_suffix(".zip"),
+                "w",
+                zipfile.ZIP_STORED
+            ) as zf:
+                for root, _, files in os.walk(temp_path):
+                    for file in files:
+                        fpath = Path(root).joinpath(file)
+                        arcname = fpath.relative_to(temp_path)
+                        zf.write(fpath, arcname)
+                        progress.update(
+                            store_task,
+                            description=f"[yellow]Moved [bold]{fpath.name}.",
+                            advance=1
+                        )
 
-    # struct_data = {}
-    # for root, _, files in os.walk(source):
-    #     files_path = []
-    #     for file in files:
-    #         files_path.append(file)
-    #     struct_data[root] = files_path
-
-    # struct = backup_data.joinpath("structure.json")
-    # save_metadata(struct, struct_data)
+    elapse = time.time() - start_time
+    print(f"[cyan]• Destination : [bold green]{destination}")
+    print(f"[cyan]{f" {elapse:.2f} Second ":=^80}")
 
     return
 
