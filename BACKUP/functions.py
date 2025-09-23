@@ -1,4 +1,5 @@
-from utils import load_metadata, save_metadata, get_size, get_file_hash, get_folder_hash, compress_file, compress_files_parallel
+from utils import SKIP_EXT
+from utils import load_metadata, save_metadata, get_size, get_file_hash, get_folder_hash, parallel_compress, compress_selected_files
 
 import os
 import json
@@ -46,24 +47,10 @@ def backup_file(
     else:
         # Compressing logic
         print(f"Compressing {name.replace(' ', '_')}...")
-        dest_zip = os.path.join(
-            destination, f"{name.replace(' ', '-')}_{timestamp}.zip")
+        dest_7z = destination.joinpath(
+            f"{name.replace(' ', '-')}_{timestamp}.7z")
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True
-        ) as progress:
-            task = progress.add_task("Compressing...", total=None)
-            with ZipFile(dest_zip, "w", compression=ZIP_DEFLATED, compresslevel=9) as zipf:
-                progress.update(
-                    task, description=f"Compressing {name}..."
-                )
-                zipf.write(file_path, os.path.basename(file_path))
-
-        print(
-            f"Compressed [yellow]{file_path}[/yellow] → [green]{dest_zip}[/green]"
-        )
+        compress_selected_files(file_path, dest_7z)
 
     # update metadata
     metadata[name] = current_hash
@@ -77,7 +64,7 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
 
     start_time = time.time()
     destination = destination.joinpath(folder_path.name)
-    metadata_path = destination.joinpath(f"metadata\\{meta_filename}")
+    metadata_path = destination.joinpath(f"{meta_filename}")
 
     metadata = load_metadata(metadata_path)
 
@@ -92,7 +79,6 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
         destination.mkdir(exist_ok=True)
 
     if not metadata:
-        destination.joinpath("metadata").mkdir(exist_ok=True)
         print('[yellow]Metadata not found.[/yellow]')
 
     # Hashing folders...
@@ -132,21 +118,10 @@ def backup_folder(folder_path: Path, destination: Path, meta_filename: str = "")
             )
 
             # Compressing files
-            dest_folder = destination.joinpath(f"{item.name}")
-            dest_folder.mkdir(exist_ok=True)
-            files_tuple: list = []
+            dest_folder = destination.joinpath(f"{item.name}.7z")
+            # dest_folder.mkdir(exist_ok=True)
 
-            for root, _, files in os.walk(item):
-                root_path = Path(root)
-                relative = root_path.relative_to(item)
-                dest_relative = dest_folder.joinpath(relative)
-                dest_relative.mkdir(exist_ok=True)
-                for file in sorted(files):
-                    files_tuple.append(
-                        (root_path.joinpath(file), dest_relative)
-                    )
-
-            compress_files_parallel(files_tuple)
+            parallel_compress(item, dest_folder)
 
             # Save metadata
             metadata[item.name] = current_hash

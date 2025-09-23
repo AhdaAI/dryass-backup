@@ -5,11 +5,17 @@ description = "Files and Folders backup program."
 authors = [{ name = "Ahda Akmalul Ilmi", email = "ahda043@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["typer (>=0.17.4,<0.18.0)", "blake3 (>=1.0.6,<2.0.0)", "zstandard (>=0.25.0,<0.26.0)"]
+license-files = ["LICENSE"]
+dependencies = [
+    "typer (>=0.17.4,<0.18.0)",
+    "blake3 (>=1.0.6,<2.0.0)",
+    "py7zr (>=1.0.0,<2.0.0)",
+]
 
 
 [tool.poetry.dependencies]
 pyinstaller = [{ version = "^6.16.0", python = ">=3.13,<3.15" }]
+inflate64 = "^1.0.1"
 
 
 [tool.poetry-pyinstaller-plugin.scripts]

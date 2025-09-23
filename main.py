@@ -7,7 +7,6 @@ This program main purpose is to be used as a steam and epic games backup.
 """
 
 from BACKUP import backup_file, backup_folder
-from utils import zst_per_file_decompression
 
 import multiprocessing
 import time
@@ -44,7 +43,6 @@ def backup(path: Path, destination: Path, meta_file: Path = Path.home().joinpath
 
 @app.command(no_args_is_help=True)
 def restore(source: Path, destination: Path):
-    zst_per_file_decompression(source, destination)
     return
 
 

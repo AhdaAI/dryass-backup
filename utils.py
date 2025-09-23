@@ -1,7 +1,8 @@
-import zstandard as zstd
-import time
 import os
 import json
+import py7zr
+import tempfile
+from multiprocessing import Manager
 from rich import print
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn
 from pathlib import Path
@@ -89,131 +90,140 @@ def get_size(path) -> int:
     return total_size
 
 
-def compress_file(input_path: Path, output_path: Path, level: int = 3, chunk_size: int = 16 * 1024 * 1024):
-    output_path = output_path.joinpath(f"{input_path.name}.zst")
-    cctx = zstd.ZstdCompressor(level=level, threads=-1)
-    with open(input_path, "rb") as fin, open(output_path, "wb") as fout:
-        with cctx.stream_writer(fout) as compressor:
-            while chunk := fin.read(chunk_size):
-                compressor.write(chunk)
-    return input_path, output_path
+# ============ 7 ZIP ============
+
+SKIP_EXT = {
+    # Audio
+    ".mp3", ".ogg", ".aac", ".opus", ".flac", ".wma", ".m4a", ".mid", ".midi",
+
+    # Video
+    ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".webm", ".flv",
+
+    # Images / Textures
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tga", ".dds", ".webp", ".ico",
+
+    # Archives / Packages
+    ".zip", ".rar", ".7z", ".gz", ".tar", ".tgz", ".xz", ".bz2",
+    ".pak", ".vpk", ".bnk", ".pck",
+
+    # Game Assets / Misc
+    ".apk", ".iso", ".cab", ".cpk", ".dat"
+}
 
 
-def compress_files_parallel(file_pairs: list[tuple[Path, Path]], level: int = 3, max_workers: int | None = None):
+def compress_selected_files(src_folder: Path, dest: Path, skip_ext: set = SKIP_EXT):
     """
-    file_pairs: [(input_path, output_path), ...]
+    Compress selected files into a .7z archive.
     """
-    results = []
-
-    with Progress(
-        TimeRemainingColumn(),
-        "•",
-        TransferSpeedColumn(),
-        "•",
-        BarColumn(),
-        "[progress.percentage]{task.percentage:>3.1f}%",
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-    ) as progress:
-        total_size = sum(inp.stat().st_size for inp, _ in file_pairs)
+    with py7zr.SevenZipFile(dest, 'w') as archive, Progress() as progress:
+        # Collect all files first
+        files = [f for f in src_folder.rglob("*") if f.is_file()]
         task = progress.add_task(
-            f"[cyan]Compressing {len(file_pairs)} files ({total_size/1024/1024:.2f} MB)",
-            total=total_size
-        )
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            future_map = {executor.submit(compress_file, inp, out, level): (
-                inp, out) for inp, out in file_pairs}
-            for future in as_completed(future_map):
-                inp, out = future_map[future]
-                try:
-                    future.result()
-                    results.append((inp, out))
-                    progress.update(task, advance=inp.stat().st_size,
-                                    description=f"[cyan]File: {inp.name[:40]}")
-                except Exception as e:
-                    print(f"❌ Error compressing {inp}: {e}")
-    return results
+            "[cyan]Compressing files...", total=len(files))
+
+        for file in files:
+            if file.suffix.lower() not in skip_ext:
+                rel_path = file.relative_to(src_folder)
+                archive.write(file, arcname=str(rel_path))
+                progress.console.log(f"✔ Added: {rel_path}")
+            else:
+                progress.console.log(f"⏩ Skipped: {file}")
+            progress.update(task, advance=1)
 
 
-def decompress_file(input_path: Path, output_path: Path, chunk_size: int = 16 * 1024 * 1024):
-    dctx = zstd.ZstdDecompressor()
-    with open(input_path, "rb") as fin, open(output_path, "wb") as fout:
-        with dctx.stream_reader(fin) as reader:
-            while chunk := reader.read(chunk_size):
-                fout.write(chunk)
-    return input_path, output_path
+def compress_subfolder(subfolder: Path, output_dir: Path, skip_ext: set[str], queue) -> Path:
+    """Compress a subfolder into its own temporary .7z archive."""
+    archive_path = output_dir / f"{subfolder.name}.7z"
+    with py7zr.SevenZipFile(archive_path, 'w') as archive:
+        for file in subfolder.rglob("*"):
+            if file.is_file() and file.suffix.lower() not in skip_ext:
+                queue.put(
+                    f"Compressing [bold]{file.name}[/bold] in {subfolder.name}...")
+                archive.write(file, arcname=str(
+                    file.relative_to(subfolder.parent)))
+    return archive_path
 
 
-def decompress_files_parallel(file_pairs: list[tuple[Path, Path]], max_workers: int | None = None):
+def merge_archives(output_file: Path, temp_archives: list[Path]):
+    """Extract multiple .7z archives and recompress them into one final archive."""
+    with tempfile.TemporaryDirectory() as extract_dir:
+        extract_dir = Path(extract_dir)
+
+        # Extract all temporary archives into one folder
+        for arc in temp_archives:
+            with py7zr.SevenZipFile(arc, 'r') as sub_archive:
+                sub_archive.extractall(path=extract_dir)
+
+        # Repack everything into a single .7z
+        with py7zr.SevenZipFile(output_file, 'w') as final_archive:
+            final_archive.writeall(extract_dir, arcname=".")
+
+
+def parallel_compress(folder: Path, output_file: Path, skip_ext: set[str] = SKIP_EXT, workers: int = max(1, (os.cpu_count() or 1) - 2)):
+    subfolders = [f for f in folder.iterdir() if f.is_dir()]
+
+    if not subfolders:  # no subfolders, compress folder directly
+        with py7zr.SevenZipFile(output_file, 'w') as archive:
+            for file in folder.rglob("*"):
+                if file.is_file() and file.suffix.lower() not in skip_ext:
+                    archive.write(
+                        file, arcname=str(file.relative_to(folder.parent)))
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir, Manager() as manager:
+        tmpdir = Path(tmpdir)
+        temp_archives = []
+        queue = manager.Queue()
+
+        with Progress(
+            BarColumn(),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            "•",
+            "[progress.description]{task.description}",
+        ) as progress, ProcessPoolExecutor(max_workers=workers) as executor:
+
+            task_main = progress.add_task(
+                "[cyan]Compressing subfolders...", total=len(subfolders))
+            task_secondary = progress.add_task(
+                "[green]Waiting for file updates...", total=None)
+
+            futures = {
+                executor.submit(compress_subfolder, sf, tmpdir, skip_ext, queue): sf
+                for sf in subfolders
+            }
+
+            while futures:
+                done, _ = as_completed(futures, timeout=0.1), futures
+
+                # Process finished tasks
+                for future in list(futures):
+                    if future.done():
+                        sf = futures.pop(future)
+                        try:
+                            archive_path = future.result()
+                            temp_archives.append(archive_path)
+                        except Exception as e:
+                            progress.console.print(
+                                f"[red]Error compressing {sf}: {e}[/red]")
+                        progress.update(
+                            task_main, description=f"[cyan]Done: {sf.name}")
+                        progress.advance(task_main)
+
+                # Process live file updates from workers
+                while not queue.empty():
+                    msg = queue.get()
+                    progress.update(
+                        task_secondary, description=f"[green]{msg}")
+
+        merge_archives(output_file, temp_archives)
+
+
+def decompress_archive(src: Path, dest_folder: Path):
     """
-    file_pairs: [(input_path, output_path), ...]
+    Decompress a .7z archive into the given destination folder.
+
+    :param src: Path to the .7z archive
+    :param dest_folder: Folder where files will be extracted
     """
-    results = []
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        future_map = {executor.submit(decompress_file, inp, out): (
-            inp, out) for inp, out in file_pairs}
-        for future in as_completed(future_map):
-            inp, out = future_map[future]
-            try:
-                future.result()
-                results.append((inp, out))
-            except Exception as e:
-                print(f"❌ Error decompressing {inp}: {e}")
-    return results
-
-
-# Temporary
-def zst_per_file_decompression(
-        source: Path,
-        destination: Path,
-        chunk_size: int = 16 * 1024 * 1024
-):
-    start_time = time.time()
-    destination = destination.joinpath(source.name)
-    destination.mkdir(parents=True, exist_ok=True)
-
-    print(f"• [cyan]Restoring backup [bold]{source.name}[/bold]...[/cyan]")
-
-    # Collect all .zst files
-    zst_files = [
-        Path(root) / f for root, _, files in os.walk(source)
-        for f in files if f.endswith(".zst")
-    ]
-    total_size = sum(f.stat().st_size for f in zst_files)
-
-    with Progress(
-        TimeRemainingColumn(),
-        "•",
-        TransferSpeedColumn(),
-        "•",
-        BarColumn(),
-        "[progress.percentage]{task.percentage:>3.1f}%",
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-    ) as progress:
-        task_files = progress.add_task(
-            f"[cyan]Decompressing {len(zst_files)} files", total=len(zst_files))
-        task_size = progress.add_task(
-            f"[green]Reading {total_size/1024/1024:.2f} MB", total=total_size)
-
-        dctx = zstd.ZstdDecompressor()
-
-        for zst_file in zst_files:
-            # Restore original path (remove .zst)
-            relative_path = zst_file.relative_to(source)
-            out_path = destination / relative_path.with_suffix("")
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Decompress
-            with open(zst_file, "rb") as fin, open(out_path, "wb") as fout:
-                with dctx.stream_reader(fin) as reader:
-                    while chunk := reader.read(chunk_size):
-                        fout.write(chunk)
-
-            progress.update(task_files, advance=1,
-                            description=f"[cyan]File: {out_path.name[:40]}")
-            progress.update(task_size, advance=zst_file.stat().st_size)
-
-    elapsed = time.time() - start_time
-    print(
-        f"  [bold green]Restore complete![/bold green] → {destination} ([yellow]Elapsed[/yellow] {elapsed:.2f}s)")
+    with py7zr.SevenZipFile(src, 'r') as archive:
+        archive.extractall(path=dest_folder)
