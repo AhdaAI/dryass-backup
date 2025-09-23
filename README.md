@@ -1,6 +1,6 @@
 # DRYASS BACKUP
 
-[![Build and Release](https://github.com/AhdaAI/dryass-backup/actions/workflows/release.yml/badge.svg?branch=main&event=release)](https://github.com/AhdaAI/dryass-backup/actions/workflows/release.yml)
+[![Build and Release](https://github.com/AhdaAI/dryass-backup/actions/workflows/release.yml/badge.svg)](https://github.com/AhdaAI/dryass-backup/actions/workflows/release.yml)
 
 > - Backup : ✔️ Implemented
 > - Restore : ✖️ Not Yet Implement
