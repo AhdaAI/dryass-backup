@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: write
 
@@ -20,12 +20,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.13"
-
-      - name: Install Wine and dependencies
-        run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y wine64 wine32 gcc-mingw-w64
 
       - name: Install Poetry
         run: |
@@ -38,23 +32,19 @@ jobs:
       - name: Build with PyInstaller
         run: |
           poetry run pip install pyinstaller
-          poetry run pip install pywin32-ctypes
-          poetry run pyinstaller --onefile --name dryass \
-            --windowed \
-            --target-arch x86_64 \
-            main.py
+          poetry run pyinstaller --onefile --name dryass main.py
 
       - name: Create ZIP archive
         run: |
-          cd dist
-          zip backup_cli_program-0.1.1.tar.gz pyinstaller/win_amd64/dryass.exe
-          cd ..
+          Compress-Archive -Path dist/dryass.exe -DestinationPath dist/dryass-windows.zip
+        shell: pwsh
 
       - name: Get version from pyproject.toml
         id: get_version
         run: |
-          version=$(grep -m1 'version = ' pyproject.toml | sed 's/.*version = "\([^"]*\)".*/\1/')
-          echo "version=$version" >> $GITHUB_OUTPUT
+          $version = (Get-Content pyproject.toml | Select-String 'version = "([^"]+)"').Matches.Groups[1].Value
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+        shell: pwsh
 
       - name: Create Tag
         run: |
