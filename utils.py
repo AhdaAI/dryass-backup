@@ -104,7 +104,7 @@ SKIP_EXT = {
 
     # Archives / Packages
     ".zip", ".rar", ".7z", ".gz", ".tar", ".tgz", ".xz", ".bz2",
-    ".pak", ".vpk", ".bnk", ".pck",
+    ".pak", ".vpk", ".bnk", ".pck", ".p4k",
 
     # Game Assets / Misc
     ".apk", ".iso", ".cab", ".cpk", ".dat"

@@ -7,9 +7,11 @@ This program main purpose is to be used as a steam and epic games backup.
 """
 
 from BACKUP import backup_file, backup_folder
+from utils import get_file_hash, compress_selected_files, load_metadata, save_metadata
 
 import multiprocessing
 import time
+import os
 from pathlib import Path
 from rich import print
 
@@ -19,25 +21,46 @@ app = typer.Typer(no_args_is_help=True)
 
 
 @app.command(no_args_is_help=True)
-def backup(path: Path, destination: Path, meta_file: Path = Path.home().joinpath("backup_meta.json")):
+def backup(source: Path, destination: Path, meta_path: Path = Path.home()):
     """
     Backup your file or folder.
 
-    --path          : "C:/Program Files/HWiNFO64/HWiNFO Manual.pdf"
+    --source        : "C:/Program Files/HWiNFO64/HWiNFO Manual.pdf"
 
     --destination   : "C:/Program Files"
     """
-    if not path.exists():
-        print(f"[red][x] Error[/red]: Path '{path}' does not exist.")
-        return
+    print(f"[cyan]Preparing...")
+    source = source.resolve()
+    destination = destination.resolve().joinpath(f"{source.name}_backup")
+    meta_fname = f"{source.name}_meta.json"
+    if meta_path:
+        meta_file = meta_path.joinpath(meta_fname)
+    else:
+        meta_file = destination.joinpath(meta_fname)
 
-    if path.is_file():
-        backup_file(path, destination, meta_file)
-        return
+    if not destination.exists():
+        destination.mkdir(exist_ok=True)
 
-    if path.is_dir():
-        backup_folder(path, destination)
-        return
+    if source.is_file():  # === File Compression and Zipped ===
+        metadata = load_metadata(meta_file)
+        file_hash = get_file_hash(source)
+        if metadata.get(source.name) == file_hash:
+            return print(f"[green]No change detected.")
+        compress_selected_files(source, destination)
+        metadata[source.name] = file_hash
+        save_metadata(meta_file, metadata)
+        return print(["[green]File successfully compressed."])
+
+    struct = destination.joinpath("structure.json")
+    struct_data = {}
+    for root, _, files in os.walk(source):
+        files_path = []
+        for file in files:
+            files_path.append(file)
+        struct_data[root] = files_path
+
+    save_metadata(struct, struct_data)
+
     return
 
 

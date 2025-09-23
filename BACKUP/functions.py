@@ -6,7 +6,6 @@ import json
 import shutil
 import time
 import tarfile
-import zstandard as zstd
 from pathlib import Path
 from rich import print
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TransferSpeedColumn, TimeRemainingColumn
