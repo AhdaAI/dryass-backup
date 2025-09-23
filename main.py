@@ -7,6 +7,7 @@ This program main purpose is to be used as a steam and epic games backup.
 """
 
 from utils import get_file_hash, compress_selected_files, load_metadata, save_metadata, SKIP_EXT
+from multi_thread import multi_hash, multi_copy
 
 import multiprocessing
 import time
@@ -65,7 +66,15 @@ def backup(source: Path, destination: Path, meta_path: Path | None = None):
         temp_meta_path.mkdir(exist_ok=True)
 
         metadata = {}
+        files = [f for f in source.rglob("*") if f.is_file()]
+        hashes, to_zip, to_copy = multi_hash(files, source)
 
+        multi_copy(to_copy, temp_path)  # === Copying files
+        metadata['hashes'] = hashes       # === Hashes metadata
+        save_metadata(
+            temp_meta_path.joinpath(f"{source.name}_metadata.json"),
+            metadata
+        )
         with Progress(
             BarColumn(),
             "•",
@@ -74,48 +83,19 @@ def backup(source: Path, destination: Path, meta_path: Path | None = None):
             TextColumn("[progress.description]{task.description}"),
         ) as progress:
             compress_task = progress.add_task(
-                "[yellow]Compressing files...", total=len(list(source.rglob("*"))))
-
+                "[yellow]Compressing files...", total=len(to_zip))
             with zipfile.ZipFile(
                 temp_compressed,
                 "w",
                 zipfile.ZIP_DEFLATED
             ) as zipf:
-                file_hash = {}
-                for files in source.rglob("*"):
-                    arcname = files.relative_to(source)
-
-                    if files.is_file():
-                        file_hash[arcname.__str__()] = get_file_hash(files)
-
-                        if (files.suffix.lower() not in SKIP_EXT):
-                            zipf.write(files, arcname)
-                            progress.update(
-                                compress_task,
-                                description=f"[yellow]Compressed [bold]{files.name}.",
-                                advance=1)
-                            continue
-
-                        fname = files.relative_to(source)
-                        dest_copy = temp_path.joinpath(fname)
-                        dest_copy.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(
-                            files,
-                            dest_copy
-                        )
-
+                for arcname, file in to_zip:
+                    zipf.write(file, arcname)
                     progress.update(
                         compress_task,
-                        description=f"[yellow]Compressed [bold]{files.name}.",
+                        description=f"[yellow]Compressed [bold]{file.name}.",
                         advance=1
                     )
-
-            metadata["hashes"] = file_hash
-
-        save_metadata(
-            temp_meta_path.joinpath(f"{source.name}_metadata.json"),
-            metadata
-        )
 
         # === Storing process
         with Progress(
